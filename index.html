@@ -108,7 +108,7 @@
     button.warning { background: #fa0; color: #000; }
     button.success { background: #4caf50; }
     
-    /* Nút mũi tên */
+    /* Nút mũi tên - kích thước chuẩn */
     .nav-arrows {
       display: flex;
       gap: 30px;
@@ -139,9 +139,24 @@
       transform: scale(0.95);
     }
     
-    /* Ẩn nút mũi tên khi không cần */
-    .nav-arrows.hidden {
-      display: none;
+    /* Fullscreen mode - nút mũi tên nhỏ hơn */
+    body.fullscreen-mode .nav-arrows {
+      position: fixed;
+      bottom: 30px;
+      left: 0;
+      right: 0;
+      z-index: 150;
+      gap: 20px;
+    }
+    body.fullscreen-mode .nav-btn {
+      width: 50px;
+      height: 50px;
+      font-size: 1.8em;
+      background: rgba(0,0,0,0.6);
+      border-color: rgba(255,255,255,0.3);
+    }
+    body.fullscreen-mode .nav-btn:hover {
+      background: rgba(76, 175, 80, 0.5);
     }
     
     .main-content {
@@ -308,14 +323,6 @@
       font-size: 1.5em;
     }
     
-    body.fullscreen-mode .nav-arrows {
-      position: fixed;
-      bottom: 40px;
-      left: 0;
-      right: 0;
-      z-index: 150;
-    }
-    
     .toast-message {
       position: fixed;
       bottom: 30px;
@@ -423,6 +430,103 @@ const fontSizeValue = document.getElementById("fontSizeValue");
 const enableWordLookup = document.getElementById("enableWordLookup");
 const toast = document.getElementById("toast");
 const navArrows = document.getElementById("navArrows");
+
+// ==================== HÀM TÁCH CÂU THÔNG MINH (QUAN TRỌNG) ====================
+function splitIntoSentences(text) {
+  // Loại bỏ HTML tags
+  let cleanText = text.replace(/<[^>]*>/g, '');
+  
+  // Bước 1: Thay thế xuống dòng bằng dấu chấm + cách
+  cleanText = cleanText.replace(/\n+/g, '. ');
+  
+  // Bước 2: Xử lý dấu phẩy - nếu đứng giữa 2 cụm từ dài (>= 15 ký tự) thì tách
+  cleanText = cleanText.replace(/([가-힣a-zA-Z0-9])\s*,\s*(?=[가-힣a-zA-Z0-9\s]{15,})/g, '$1. ');
+  
+  // Bước 3: Xử lý dấu chấm phẩy
+  cleanText = cleanText.replace(/;/g, '. ');
+  
+  // Bước 4: Xử lý dấu hai chấm
+  cleanText = cleanText.replace(/:\s+(?=[가-힣])/g, '. ');
+  
+  // Bước 5: Tách theo dấu câu cơ bản
+  let rawSentences = cleanText.split(/[.!?。！？]+/);
+  rawSentences = rawSentences.filter(s => s.trim().length > 0);
+  
+  let finalSentences = [];
+  
+  for (let sentence of rawSentences) {
+    sentence = sentence.trim();
+    
+    // Bỏ qua câu quá ngắn (dưới 15 ký tự)
+    if (sentence.length < 15) continue;
+    
+    // Nếu câu quá dài (> 200 ký tự), cố gắng tách thêm
+    if (sentence.length > 200) {
+      // Tách theo dấu phẩy có khoảng trắng
+      let parts = sentence.split(/(?<=[가-힣])\s*,\s*(?=[가-힣])/);
+      
+      if (parts.length > 1) {
+        for (let part of parts) {
+          part = part.trim();
+          if (part.length > 20) {
+            // Nếu part vẫn còn dài, tách tiếp theo khoảng trắng
+            if (part.length > 150) {
+              let subParts = part.split(/(?<=[가-힣])\s+(?=[가-힣]{5,})/);
+              for (let sub of subParts) {
+                if (sub.length > 15) finalSentences.push(sub);
+              }
+            } else {
+              finalSentences.push(part);
+            }
+          }
+        }
+      } else {
+        // Tách theo khoảng trắng nếu quá dài
+        let words = sentence.split(' ');
+        let batch = [];
+        let batchLen = 0;
+        
+        for (let word of words) {
+          if (batchLen + word.length > 100 && batch.length > 0) {
+            let batchStr = batch.join(' ');
+            if (batchStr.length > 15) finalSentences.push(batchStr);
+            batch = [word];
+            batchLen = word.length;
+          } else {
+            batch.push(word);
+            batchLen += word.length + 1;
+          }
+        }
+        if (batch.length > 0) {
+          let batchStr = batch.join(' ');
+          if (batchStr.length > 15) finalSentences.push(batchStr);
+        }
+      }
+    } else {
+      finalSentences.push(sentence);
+    }
+  }
+  
+  // Lọc bỏ các câu trùng lặp gần giống
+  let unique = [];
+  for (let s of finalSentences) {
+    let isDuplicate = false;
+    for (let existing of unique) {
+      // Nếu câu mới chứa câu cũ hoặc ngược lại với độ dài tương đồng > 70%
+      if ((existing.includes(s) && s.length > existing.length * 0.7) ||
+          (s.includes(existing) && existing.length > s.length * 0.7)) {
+        isDuplicate = true;
+        break;
+      }
+    }
+    if (!isDuplicate) {
+      unique.push(s);
+    }
+  }
+  
+  console.log(`Đã tách thành ${unique.length} câu (từ ${rawSentences.length} câu thô)`);
+  return unique;
+}
 
 // ==================== LOAD WORD CACHE ====================
 function loadWordCache() {
@@ -592,13 +696,6 @@ function parseSRTToText(content) {
     }
   }
   return textLines.join("\n\n");
-}
-
-function splitIntoSentences(text) {
-  let sentences = text.split(/[.!?。！？]+(?:\s+|\n+|$)/);
-  sentences = sentences.filter(s => s.trim().length > 8);
-  sentences = sentences.map(s => s.trim());
-  return sentences;
 }
 
 // ==================== GOOGLE DỊCH CÂU ====================
@@ -821,6 +918,7 @@ async function processNewFile(file, rawContent) {
     textContent = parseSRTToText(rawContent);
   }
   
+  // SỬ DỤNG HÀM TÁCH CÂU THÔNG MINH MỚI
   const sentences = splitIntoSentences(textContent);
   
   if (sentences.length === 0) {
@@ -833,6 +931,7 @@ async function processNewFile(file, rawContent) {
   
   updateDisplay();
   saveToCache();
+  showToast(`📝 Đã tìm thấy ${sentences.length} câu. Bắt đầu dịch khi chọn câu...`, 3000);
 }
 
 // Xử lý chọn file
@@ -850,6 +949,8 @@ document.getElementById("fileInput").addEventListener("change", async function(e
       await processNewFile(file, ev.target.result);
     };
     reader.readAsText(file, "UTF-8");
+  } else {
+    showToast(`📀 Đã khôi phục ${bilingualPairs.length} câu từ bộ nhớ`, 2000);
   }
 });
 
@@ -869,12 +970,10 @@ function toggleFullscreen() {
     document.documentElement.requestFullscreen();
     document.body.classList.add('fullscreen-mode');
     document.getElementById("fullscreenBtn").innerHTML = "🗗";
-    navArrows.style.display = "flex";
   } else {
     document.exitFullscreen();
     document.body.classList.remove('fullscreen-mode');
     document.getElementById("fullscreenBtn").innerHTML = "🖥️";
-    navArrows.style.display = "flex";
   }
 }
 
@@ -882,7 +981,6 @@ document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) {
     document.body.classList.remove('fullscreen-mode');
     document.getElementById("fullscreenBtn").innerHTML = "🖥️";
-    navArrows.style.display = "flex";
   }
 });
 

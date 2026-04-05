@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trình đọc RSS Song Ngữ - Tra từng từ tiếng Hàn</title>
+  <title>Trình đọc RSS Song Ngữ - Tra từ + Mũi tên Fullscreen</title>
   <style>
     * { box-sizing: border-box; }
     body { 
@@ -108,6 +108,42 @@
     button.warning { background: #fa0; color: #000; }
     button.success { background: #4caf50; }
     
+    /* Nút mũi tên */
+    .nav-arrows {
+      display: flex;
+      gap: 30px;
+      justify-content: center;
+      margin-top: 30px;
+    }
+    .nav-btn {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      border: 2px solid rgba(255,255,255,0.2);
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      font-size: 2.5em;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+    .nav-btn:hover {
+      background: rgba(76, 175, 80, 0.3);
+      border-color: #4caf50;
+      transform: scale(1.05);
+    }
+    .nav-btn:active {
+      transform: scale(0.95);
+    }
+    
+    /* Ẩn nút mũi tên khi không cần */
+    .nav-arrows.hidden {
+      display: none;
+    }
+    
     .main-content {
       width: 100%;
       max-width: 1000px;
@@ -136,7 +172,6 @@
       transition: font-size 0.2s;
     }
     
-    /* Style cho từng từ có thể nhấp */
     .korean-word {
       display: inline-block;
       cursor: pointer;
@@ -237,6 +272,7 @@
       min-width: 60px;
     }
     
+    /* Fullscreen mode - chỉ hiện đồng hồ, câu và mũi tên */
     body.fullscreen-mode .toolbar,
     body.fullscreen-mode .control-buttons,
     body.fullscreen-mode .progress-info,
@@ -257,7 +293,7 @@
       background: transparent;
       border: none;
       padding: 20px;
-      min-height: 80vh;
+      min-height: 70vh;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -270,6 +306,14 @@
     
     body.fullscreen-mode .vietnam-display {
       font-size: 1.5em;
+    }
+    
+    body.fullscreen-mode .nav-arrows {
+      position: fixed;
+      bottom: 40px;
+      left: 0;
+      right: 0;
+      z-index: 150;
     }
     
     .toast-message {
@@ -344,6 +388,12 @@
   </div>
 </div>
 
+<!-- Nút mũi tên chỉ có icon -->
+<div class="nav-arrows" id="navArrows">
+  <button class="nav-btn" onclick="prevSentence()" id="prevBtnNav">◀</button>
+  <button class="nav-btn" onclick="nextSentence()" id="nextBtnNav">▶</button>
+</div>
+
 <button class="fullscreen-btn-fab" onclick="toggleFullscreen()" id="fullscreenBtn">🖥️</button>
 <div id="toast" class="toast-message"></div>
 
@@ -359,8 +409,8 @@ let isTranslatingCurrent = false;
 // Cache từ vựng đã tra
 let wordCache = new Map();
 
-const CACHE_DB_KEY = 'bilingual_single_cache_v4';
-const WORD_CACHE_KEY = 'word_meaning_cache_v2';
+const CACHE_DB_KEY = 'bilingual_single_cache_v5';
+const WORD_CACHE_KEY = 'word_meaning_cache_v3';
 
 // DOM elements
 const koreanDisplay = document.getElementById("koreanDisplay");
@@ -372,6 +422,7 @@ const fontSizeSlider = document.getElementById("fontSizeSlider");
 const fontSizeValue = document.getElementById("fontSizeValue");
 const enableWordLookup = document.getElementById("enableWordLookup");
 const toast = document.getElementById("toast");
+const navArrows = document.getElementById("navArrows");
 
 // ==================== LOAD WORD CACHE ====================
 function loadWordCache() {
@@ -392,11 +443,9 @@ function saveWordCache() {
 
 // ==================== DỊCH TỪ (WORD LEVEL) ====================
 async function translateWord(word) {
-  // Loại bỏ dấu câu
   const cleanWord = word.replace(/[.,!?;:()\[\]{}""''「」『』]/g, '');
   if (cleanWord.length === 0) return null;
   
-  // Kiểm tra cache
   if (wordCache.has(cleanWord)) {
     return wordCache.get(cleanWord);
   }
@@ -427,7 +476,6 @@ async function onWordClick(word, element) {
     return;
   }
   
-  // Tìm span nghĩa bên trong element
   const existingSpan = element.querySelector('.word-meaning');
   if (existingSpan) {
     existingSpan.remove();
@@ -459,30 +507,25 @@ function showToast(msg, duration = 2000) {
   }, duration);
 }
 
-// ==================== TÁCH TỪ TIẾNG HÀN (QUAN TRỌNG) ====================
+// ==================== TÁCH TỪ TIẾNG HÀN ====================
 function tokenizeKorean(text) {
-  // Pattern cho ký tự Hàn Quốc (Hangul)
   const hangulPattern = /([\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]+)/g;
   const tokens = [];
   let lastIndex = 0;
   let match;
   
   while ((match = hangulPattern.exec(text)) !== null) {
-    // Thêm phần text không phải Hàn Quốc (khoảng trắng, dấu câu)
     if (match.index > lastIndex) {
       const nonKorean = text.substring(lastIndex, match.index);
       tokens.push({ type: 'text', content: nonKorean });
     }
     
-    // Từ tiếng Hàn - có thể tách tiếp thành các từ nhỏ hơn?
-    // Nhưng tiếng Hàn viết liền, khó tách. Giữ nguyên cụm liền.
     const koreanWord = match[0];
     tokens.push({ type: 'word', content: koreanWord });
     
     lastIndex = match.index + match[0].length;
   }
   
-  // Phần còn lại
   if (lastIndex < text.length) {
     tokens.push({ type: 'text', content: text.substring(lastIndex) });
   }
@@ -490,7 +533,6 @@ function tokenizeKorean(text) {
   return tokens;
 }
 
-// ==================== TẠO HTML TỪ CÁC TOKEN ====================
 function renderKoreanText(text) {
   if (!text) return '';
   
@@ -501,7 +543,6 @@ function renderKoreanText(text) {
     if (token.type === 'text') {
       html += escapeHtml(token.content);
     } else {
-      // Mỗi từ tiếng Hàn là một span riêng
       const word = token.content;
       html += `<span class="korean-word" data-word="${escapeHtml(word)}" onclick="onWordClick('${escapeHtml(word).replace(/'/g, "\\'")}', this)">${escapeHtml(word)}</span>`;
     }
@@ -606,7 +647,6 @@ function updateDisplay() {
   
   const current = bilingualPairs[currentIndex];
   
-  // Hiển thị tiếng Hàn với từng từ có thể nhấp riêng
   koreanDisplay.innerHTML = renderKoreanText(current.kr);
   
   if (current.vi && current.vi !== "[Đang dịch...]") {
@@ -643,7 +683,7 @@ async function nextSentence() {
     saveToCache();
   } else {
     if (isAutoPlaying) stopAutoPlay();
-    alert("🎉 Đã hết bài học!");
+    showToast("🎉 Đã hết bài học!", 2000);
   }
 }
 
@@ -654,6 +694,8 @@ async function prevSentence() {
     currentIndex--;
     updateDisplay();
     saveToCache();
+  } else {
+    showToast("📌 Đã ở câu đầu tiên", 1500);
   }
 }
 
@@ -709,7 +751,7 @@ function startAutoPlay() {
       saveToCache();
     } else {
       stopAutoPlay();
-      alert("🎉 Hoàn thành! Bạn đã học xong toàn bộ.");
+      showToast("🎉 Hoàn thành! Bạn đã học xong toàn bộ.", 3000);
     }
   };
   
@@ -827,10 +869,12 @@ function toggleFullscreen() {
     document.documentElement.requestFullscreen();
     document.body.classList.add('fullscreen-mode');
     document.getElementById("fullscreenBtn").innerHTML = "🗗";
+    navArrows.style.display = "flex";
   } else {
     document.exitFullscreen();
     document.body.classList.remove('fullscreen-mode');
     document.getElementById("fullscreenBtn").innerHTML = "🖥️";
+    navArrows.style.display = "flex";
   }
 }
 
@@ -838,6 +882,7 @@ document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) {
     document.body.classList.remove('fullscreen-mode');
     document.getElementById("fullscreenBtn").innerHTML = "🖥️";
+    navArrows.style.display = "flex";
   }
 });
 
@@ -874,10 +919,10 @@ document.addEventListener('keydown', (e) => {
     toggleAutoPlay();
   } else if (e.code === 'ArrowRight') {
     e.preventDefault();
-    if (!isAutoPlaying) nextSentence();
+    nextSentence();
   } else if (e.code === 'ArrowLeft') {
     e.preventDefault();
-    if (!isAutoPlaying) prevSentence();
+    prevSentence();
   } else if (e.code === 'KeyF') {
     e.preventDefault();
     toggleFullscreen();
@@ -887,7 +932,7 @@ document.addEventListener('keydown', (e) => {
 // Khởi tạo
 loadWordCache();
 updateDisplay();
-console.log("App đã sẵn sàng - NHẤP VÀO TỪNG TỪ TIẾNG HÀN để tra nghĩa!");
+console.log("App đã sẵn sàng - Dùng mũi tên hoặc phím ← → để chuyển câu!");
 </script>
 </body>
 </html>

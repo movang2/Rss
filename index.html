@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trình đọc RSS Song Ngữ - Dịch từng câu + Fullscreen</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: 'Segoe UI', 'Malgun Gothic', sans-serif; 
+      margin: 0; 
+      padding: 0; 
+      background: #000; 
+      color: #eee; 
+      min-height: 100vh;
+      transition: all 0.3s;
+    }
+    
+    /* Container chính */
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    /* Đồng hồ */
+    .clock-container {
+      text-align: center;
+      margin-bottom: 30px;
+      transition: all 0.3s;
+    }
+    #clock { 
+      font-size: 4em; 
+      font-weight: bold; 
+      font-family: 'Courier New', monospace;
+      color: #0af;
+      text-shadow: 0 0 10px rgba(0,170,255,0.5);
+      letter-spacing: 2px;
+    }
+    #date { 
+      font-size: 1em; 
+      opacity: 0.6; 
+      margin-top: 5px;
+    }
+    
+    /* Thanh công cụ (sẽ ẩn khi fullscreen) */
+    .toolbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(20,20,20,0.95);
+      backdrop-filter: blur(10px);
+      padding: 12px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      z-index: 100;
+      border-bottom: 1px solid #333;
+      transition: transform 0.3s ease;
+    }
+    
+    /* Ẩn toolbar khi fullscreen */
+    body.fullscreen-mode .toolbar {
+      transform: translateY(-100%);
+      pointer-events: none;
+    }
+    
+    /* Nút fullscreen nổi */
+    .fullscreen-btn-fab {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #0af;
+      color: #000;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 200;
+      border: none;
+      font-size: 24px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      transition: all 0.2s;
+    }
+    body.fullscreen-mode .fullscreen-btn-fab {
+      background: #f44;
+    }
+    .fullscreen-btn-fab:hover {
+      transform: scale(1.05);
+    }
+    
+    button, input, select {
+      padding: 8px 16px;
+      font-size: 0.9em;
+      cursor: pointer;
+      border-radius: 8px;
+      border: none;
+      background: #2a2a2a;
+      color: white;
+      transition: all 0.2s;
+    }
+    button:hover { transform: translateY(-1px); filter: brightness(1.1); }
+    button.primary { background: #0af; color: #000; font-weight: bold; }
+    button.danger { background: #f44; }
+    button.warning { background: #fa0; color: #000; }
+    button.success { background: #4caf50; }
+    
+    /* Khung hiển thị câu chính */
+    .main-content {
+      width: 100%;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    .current-card {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border-radius: 24px;
+      padding: 40px 30px;
+      margin: 20px 0;
+      border: 1px solid #333;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+      transition: all 0.3s;
+    }
+    
+    .korean-display {
+      font-size: 1.8em;
+      font-weight: bold;
+      color: #4caf50;
+      line-height: 1.5;
+      margin-bottom: 30px;
+      word-break: break-word;
+      text-align: center;
+      transition: font-size 0.2s;
+    }
+    
+    .vietnam-display {
+      font-size: 1.3em;
+      color: #66ccff;
+      line-height: 1.5;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 2px dashed #333;
+      word-break: break-word;
+      text-align: center;
+      transition: font-size 0.2s;
+    }
+    
+    .translating-badge {
+      display: inline-block;
+      background: #fa0;
+      color: #000;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8em;
+      margin-left: 10px;
+      animation: pulse 1s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    
+    .progress-info {
+      text-align: center;
+      font-size: 0.9em;
+      color: #888;
+      margin-top: 20px;
+    }
+    
+    .control-buttons {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    
+    .jump-box {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      background: #1a1a1a;
+      padding: 5px 15px;
+      border-radius: 30px;
+    }
+    
+    .jump-box input {
+      width: 70px;
+      text-align: center;
+    }
+    
+    /* Thanh trượt chỉnh cỡ chữ */
+    .font-size-control {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      background: #1a1a1a;
+      padding: 5px 15px;
+      border-radius: 30px;
+    }
+    .font-size-control input {
+      width: 150px;
+    }
+    .font-size-control span {
+      font-size: 0.85em;
+      min-width: 60px;
+    }
+    
+    /* Chế độ fullscreen - chỉ hiện đồng hồ và câu */
+    body.fullscreen-mode .toolbar,
+    body.fullscreen-mode .control-buttons,
+    body.fullscreen-mode .progress-info,
+    body.fullscreen-mode .jump-box,
+    body.fullscreen-mode .font-size-control {
+      display: none !important;
+    }
+    
+    body.fullscreen-mode .clock-container {
+      position: fixed;
+      top: 20px;
+      left: 0;
+      right: 0;
+      margin-bottom: 0;
+    }
+    
+    body.fullscreen-mode .current-card {
+      background: transparent;
+      border: none;
+      padding: 20px;
+      min-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    
+    body.fullscreen-mode .korean-display {
+      font-size: 2.2em;
+    }
+    
+    body.fullscreen-mode .vietnam-display {
+      font-size: 1.5em;
+    }
+    
+    /* Timer hiển thị */
+    .timer-display {
+      font-size: 0.85em;
+      color: #fa0;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <input type="file" id="fileInput" accept=".txt,.srt,.rss,.xml,.html" style="background:#333;">
+  <button onclick="toggleAutoPlay()" id="playBtn" class="primary">▶️ Bắt đầu</button>
+  <button onclick="clearAllData()" class="danger">🗑️ Xóa cache</button>
+  
+  <div class="jump-box">
+    <span>🎯 Câu số:</span>
+    <input type="number" id="jumpToIndex" min="1" value="1">
+    <button onclick="jumpToSentence()" style="background:#9c27b0">Đi</button>
+  </div>
+  
+  <div class="font-size-control">
+    <span>🔤 Cỡ chữ:</span>
+    <input type="range" id="fontSizeSlider" min="0.8" max="2.2" step="0.05" value="1.0">
+    <span id="fontSizeValue">100%</span>
+  </div>
+  
+  <label>⏱️ Giây/câu: 
+    <input type="number" id="paragraphTime" value="8" min="2" max="30" step="1" style="width:70px">
+  </label>
+</div>
+
+<div class="app-container">
+  <div class="clock-container">
+    <div id="clock">00:00</div>
+    <div id="date">-- -- ----</div>
+  </div>
+  
+  <div class="main-content">
+    <div class="current-card" id="currentCard">
+      <div class="korean-display" id="koreanDisplay">
+        📂 Chọn file RSS/SRT để bắt đầu
+      </div>
+      <div class="vietnam-display" id="vietnamDisplay">
+        
+      </div>
+    </div>
+    
+    <div class="progress-info" id="progressInfo">
+      Chưa có dữ liệu
+    </div>
+    
+    <div class="control-buttons">
+      <button onclick="prevSentence()" class="warning">◀ Câu trước</button>
+      <button onclick="nextSentence()" class="success">Câu tiếp ▶</button>
+    </div>
+  </div>
+</div>
+
+<button class="fullscreen-btn-fab" onclick="toggleFullscreen()" id="fullscreenBtn">🖥️</button>
+
+<script>
+// ==================== BIẾN TOÀN CỤC ====================
+let bilingualPairs = [];        // [{ kr: "...", vi: "..." }]
+let currentIndex = 0;           // Vị trí hiện tại (0-based)
+let autoPlayInterval = null;
+let isAutoPlaying = false;
+let currentFileName = '';
+let isTranslatingCurrent = false;
+
+// Cache DB
+const CACHE_DB_KEY = 'bilingual_single_cache_v2';
+
+// DOM elements
+const koreanDisplay = document.getElementById("koreanDisplay");
+const vietnamDisplay = document.getElementById("vietnamDisplay");
+const progressInfo = document.getElementById("progressInfo");
+const playBtn = document.getElementById("playBtn");
+const jumpToIndexInput = document.getElementById("jumpToIndex");
+const fontSizeSlider = document.getElementById("fontSizeSlider");
+const fontSizeValue = document.getElementById("fontSizeValue");
+
+// ==================== HÀM XỬ LÝ FILE ====================
+function parseRSSToText(xmlContent) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlContent, "text/xml");
+  
+  if (doc.querySelector("parsererror")) return xmlContent;
+  
+  let allText = [];
+  const items = doc.querySelectorAll("item, entry");
+  
+  if (items.length === 0) return xmlContent;
+  
+  items.forEach(item => {
+    const title = item.querySelector("title")?.textContent || "";
+    if (title.trim()) allText.push(title);
+    
+    const description = item.querySelector("description")?.textContent || "";
+    const content = item.querySelector("content\\:encoded, encoded")?.textContent || "";
+    let bodyText = description || content;
+    
+    if (bodyText) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = bodyText;
+      allText.push(tempDiv.textContent || tempDiv.innerText);
+    }
+  });
+  
+  return allText.join("\n\n");
+}
+
+function parseSRTToText(content) {
+  const blocks = content.split(/\r?\n\r?\n+/);
+  const textLines = [];
+  for (const block of blocks) {
+    const lines = block.trim().split(/\r?\n/);
+    if (lines.length >= 3) {
+      const text = lines.slice(2).join(' ').trim();
+      if (text) textLines.push(text);
+    }
+  }
+  return textLines.join("\n\n");
+}
+
+function splitIntoSentences(text) {
+  let sentences = text.split(/[.!?。！？]+(?:\s+|\n+|$)/);
+  sentences = sentences.filter(s => s.trim().length > 8);
+  sentences = sentences.map(s => s.trim());
+  return sentences;
+}
+
+// ==================== GOOGLE DỊCH ====================
+async function translateText(text, fromLang = "ko", toLang = "vi") {
+  if (!text || text.trim().length === 0) return "";
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromLang}&tl=${toLang}&dt=t&q=${encodeURIComponent(text)}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    return data[0].map(item => item[0]).join('');
+  } catch (error) {
+    console.error("Lỗi dịch:", error);
+    return "[Lỗi kết nối]";
+  }
+}
+
+// ==================== DỊCH CÂU HIỆN TẠI ====================
+async function translateCurrentSentence() {
+  if (!bilingualPairs[currentIndex]) return;
+  if (bilingualPairs[currentIndex].vi && bilingualPairs[currentIndex].vi !== "[Đang dịch...]") {
+    updateDisplay();
+    return;
+  }
+  
+  if (isTranslatingCurrent) return;
+  isTranslatingCurrent = true;
+  
+  vietnamDisplay.innerHTML = '<span class="translating-badge">🔄 Đang dịch sang tiếng Việt...</span>';
+  
+  const translated = await translateText(bilingualPairs[currentIndex].kr, "ko", "vi");
+  bilingualPairs[currentIndex].vi = translated;
+  
+  isTranslatingCurrent = false;
+  saveToCache();
+  updateDisplay();
+}
+
+// ==================== HIỂN THỊ CÂU HIỆN TẠI ====================
+function updateDisplay() {
+  if (!bilingualPairs.length) {
+    koreanDisplay.innerHTML = "📂 Chọn file RSS/SRT để bắt đầu";
+    vietnamDisplay.innerHTML = "";
+    progressInfo.innerHTML = "Chưa có dữ liệu";
+    return;
+  }
+  
+  const current = bilingualPairs[currentIndex];
+  koreanDisplay.innerHTML = escapeHtml(current.kr);
+  
+  if (current.vi && current.vi !== "[Đang dịch...]") {
+    vietnamDisplay.innerHTML = escapeHtml(current.vi);
+  } else if (current.vi === "[Đang dịch...]") {
+    vietnamDisplay.innerHTML = '<span class="translating-badge">🔄 Đang dịch...</span>';
+  } else {
+    vietnamDisplay.innerHTML = '<span class="translating-badge">⏳ Chưa dịch. Đang xử lý...</span>';
+    translateCurrentSentence();
+  }
+  
+  const translatedCount = bilingualPairs.filter(p => p.vi && p.vi !== "[Đang dịch...]").length;
+  progressInfo.innerHTML = `📊 Câu ${currentIndex + 1}/${bilingualPairs.length} | ✅ Đã dịch: ${translatedCount}/${bilingualPairs.length}`;
+  jumpToIndexInput.value = currentIndex + 1;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  }).replace(/\n/g, '<br>');
+}
+
+// ==================== ĐIỀU KHIỂN CÂU ====================
+async function nextSentence() {
+  if (bilingualPairs.length === 0) return;
+  
+  if (currentIndex < bilingualPairs.length - 1) {
+    currentIndex++;
+    updateDisplay();
+    saveToCache();
+  } else {
+    if (isAutoPlaying) stopAutoPlay();
+    alert("🎉 Đã hết bài học!");
+  }
+}
+
+async function prevSentence() {
+  if (bilingualPairs.length === 0) return;
+  
+  if (currentIndex > 0) {
+    currentIndex--;
+    updateDisplay();
+    saveToCache();
+  }
+}
+
+async function jumpToSentence() {
+  if (bilingualPairs.length === 0) {
+    alert('Chưa có dữ liệu!');
+    return;
+  }
+  
+  let target = parseInt(jumpToIndexInput.value);
+  if (isNaN(target)) target = 1;
+  target = Math.max(1, Math.min(target, bilingualPairs.length));
+  
+  if (isAutoPlaying) stopAutoPlay();
+  
+  currentIndex = target - 1;
+  updateDisplay();
+  saveToCache();
+}
+
+// ==================== TỰ ĐỘNG PHÁT (ĐÃ SỬA LỖI) ====================
+function toggleAutoPlay() {
+  if (bilingualPairs.length === 0) {
+    alert('Vui lòng chọn file RSS/SRT trước!');
+    return;
+  }
+  
+  if (isAutoPlaying) {
+    stopAutoPlay();
+  } else {
+    startAutoPlay();
+  }
+}
+
+function startAutoPlay() {
+  if (isAutoPlaying) return;
+  
+  // Dừng interval cũ nếu có
+  if (autoPlayInterval) {
+    clearInterval(autoPlayInterval);
+    autoPlayInterval = null;
+  }
+  
+  isAutoPlaying = true;
+  playBtn.textContent = '⏸️ Dừng';
+  playBtn.className = 'danger';
+  
+  const timePerParagraph = parseInt(document.getElementById("paragraphTime").value) * 1000;
+  
+  console.log("Bắt đầu auto play với thời gian:", timePerParagraph, "ms");
+  
+  // Hàm chuyển câu
+  const moveToNext = () => {
+    console.log("Auto play: chuyển câu từ", currentIndex);
+    if (currentIndex < bilingualPairs.length - 1) {
+      currentIndex++;
+      updateDisplay();
+      saveToCache();
+    } else {
+      // Hết bài
+      console.log("Hết bài, dừng auto play");
+      stopAutoPlay();
+      alert("🎉 Hoàn thành! Bạn đã học xong toàn bộ.");
+    }
+  };
+  
+  // Bắt đầu interval
+  autoPlayInterval = setInterval(moveToNext, timePerParagraph);
+}
+
+function stopAutoPlay() {
+  isAutoPlaying = false;
+  if (autoPlayInterval) {
+    clearInterval(autoPlayInterval);
+    autoPlayInterval = null;
+  }
+  playBtn.textContent = '▶️ Bắt đầu';
+  playBtn.className = 'primary';
+  console.log("Đã dừng auto play");
+}
+
+// ==================== LƯU CACHE THEO TÊN FILE ====================
+function getFileKey(fileName) {
+  return 'file_' + fileName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+}
+
+function saveToCache() {
+  if (!currentFileName || !bilingualPairs.length) return;
+  
+  const cache = getAllCache();
+  const fileKey = getFileKey(currentFileName);
+  
+  cache[fileKey] = {
+    fileName: currentFileName,
+    pairs: bilingualPairs,
+    lastIndex: currentIndex,
+    totalSentences: bilingualPairs.length,
+    lastUpdated: Date.now()
+  };
+  
+  localStorage.setItem(CACHE_DB_KEY, JSON.stringify(cache));
+}
+
+function getAllCache() {
+  const saved = localStorage.getItem(CACHE_DB_KEY);
+  return saved ? JSON.parse(saved) : {};
+}
+
+async function loadFromCache(fileName) {
+  const cache = getAllCache();
+  const fileKey = getFileKey(fileName);
+  const cached = cache[fileKey];
+  
+  if (cached && cached.fileName === fileName && cached.pairs && cached.pairs.length > 0) {
+    bilingualPairs = cached.pairs;
+    currentIndex = cached.lastIndex;
+    updateDisplay();
+    return true;
+  }
+  return false;
+}
+
+// ==================== XỬ LÝ FILE MỚI ====================
+async function processNewFile(file, rawContent) {
+  currentFileName = file.name;
+  
+  let textContent = rawContent;
+  
+  if (currentFileName.match(/\.(rss|xml)$/i)) {
+    textContent = parseRSSToText(rawContent);
+  } else if (currentFileName.match(/\.srt$/i)) {
+    textContent = parseSRTToText(rawContent);
+  }
+  
+  const sentences = splitIntoSentences(textContent);
+  
+  if (sentences.length === 0) {
+    koreanDisplay.innerHTML = "❌ Không tìm thấy câu tiếng Hàn nào!";
+    return;
+  }
+  
+  bilingualPairs = sentences.map(kr => ({ kr: kr, vi: null }));
+  currentIndex = 0;
+  
+  updateDisplay();
+  saveToCache();
+}
+
+// Xử lý chọn file
+document.getElementById("fileInput").addEventListener("change", async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  if (isAutoPlaying) stopAutoPlay();
+  
+  const loaded = await loadFromCache(file.name);
+  
+  if (!loaded) {
+    const reader = new FileReader();
+    reader.onload = async function(ev) {
+      await processNewFile(file, ev.target.result);
+    };
+    reader.readAsText(file, "UTF-8");
+  }
+});
+
+// ==================== CHỈNH CỠ CHỮ ====================
+function updateFontSize() {
+  const size = parseFloat(fontSizeSlider.value);
+  koreanDisplay.style.fontSize = size + 'em';
+  vietnamDisplay.style.fontSize = (size * 0.7) + 'em';
+  fontSizeValue.innerText = Math.round(size * 100) + '%';
+}
+
+fontSizeSlider.addEventListener('input', updateFontSize);
+updateFontSize();
+
+// ==================== FULLSCREEN ====================
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+    document.body.classList.add('fullscreen-mode');
+    document.getElementById("fullscreenBtn").innerHTML = "🗗";
+  } else {
+    document.exitFullscreen();
+    document.body.classList.remove('fullscreen-mode');
+    document.getElementById("fullscreenBtn").innerHTML = "🖥️";
+  }
+}
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    document.body.classList.remove('fullscreen-mode');
+    document.getElementById("fullscreenBtn").innerHTML = "🖥️";
+  }
+});
+
+// ==================== XÓA CACHE ====================
+function clearAllData() {
+  if (confirm('Xóa toàn bộ cache? Mất tiến độ của tất cả file!')) {
+    localStorage.removeItem(CACHE_DB_KEY);
+    bilingualPairs = [];
+    currentIndex = 0;
+    currentFileName = '';
+    updateDisplay();
+    alert('Đã xóa cache!');
+  }
+}
+
+// ==================== ĐỒNG HỒ ====================
+function updateClock() {
+  const now = new Date();
+  let h = String(now.getHours()).padStart(2,"0");
+  let m = String(now.getMinutes()).padStart(2,"0");
+  document.getElementById("clock").textContent = `${h}:${m}`;
+  const options = { weekday: 'short', day: '2-digit', month: 'long', year: 'numeric' };
+  document.getElementById("date").textContent = now.toLocaleDateString("vi-VN", options);
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ==================== PHÍM TẮT ====================
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    toggleAutoPlay();
+  } else if (e.code === 'ArrowRight') {
+    e.preventDefault();
+    if (!isAutoPlaying) nextSentence();
+  } else if (e.code === 'ArrowLeft') {
+    e.preventDefault();
+    if (!isAutoPlaying) prevSentence();
+  } else if (e.code === 'KeyF') {
+    e.preventDefault();
+    toggleFullscreen();
+  }
+});
+
+// Khởi tạo
+updateDisplay();
+console.log("App đã sẵn sàng");
+</script>
+</body>
+</html>
